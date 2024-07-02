@@ -13,3 +13,7 @@
 ## 0.0.4
 
 - Added support for http-01
+
+## 0.0.5
+
+- Documentation Improvements
