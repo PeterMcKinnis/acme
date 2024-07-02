@@ -42,7 +42,7 @@ Once certificates are created thay can be used to start a server.  `certs.public
 
 ## Multiple Hosts And Wild Card Domains
 
-You can create a certificate for multiple hosts, including wildcard domains.  See acme refernce for details
+You can create a certificate for multiple hosts, including wildcard domains.  See acme acme for details
 
 ``` Dart
 await acmeDns01Challenge(

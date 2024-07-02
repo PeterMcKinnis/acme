@@ -57,7 +57,7 @@ String generateCsr({
   return csr;
 }
 
-/// Creates certificates using th DNS-01 challenge.
+/// Creates certificates using th DNS-01 challenge.  
 ///
 /// [hosts] one or more hosts that the certificate will cover.  Note that the first
 /// subdomain for any host may be an \* to generate a wildcard certificate.  e.g. ["mysite.org", "deeply.nested.subdomain.at.mysite.org", "*.api.mysite.org", "mysite.com"]
@@ -228,6 +228,8 @@ const letsEncryptDirectoryUrl =
 const letsEncryptStagingDirectoryUrl =
     "https://acme-staging-v02.api.letsencrypt.org/directory";
 
+/// Data object containing certificates and Acme account.  This is the result of a successfull
+/// call to [acmeDns01Challenge]
 class AcmeChallengeResult {
   AcmeChallengeResult(
       {required this.account,
@@ -238,6 +240,8 @@ class AcmeChallengeResult {
   String publicPem;
 }
 
+/// Makes signed http requests to the ACME server.  Can be used instead of [acmeDns01Challenge] for more
+/// control if needed.
 class AcmeClient {
   final String directoryUrl;
   String newNonceUrl;
