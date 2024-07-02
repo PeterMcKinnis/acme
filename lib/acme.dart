@@ -220,8 +220,11 @@ Future<void> _doDnsChallenge(
   });
 }
 
+/// The public directory url for Let's Encrypt
 const letsEncryptDirectoryUrl =
     "https://acme-v02.api.letsencrypt.org/directory";
+
+  /// The public directory url for Let's Encrypt staging.  Used for testing  
 const letsEncryptStagingDirectoryUrl =
     "https://acme-staging-v02.api.letsencrypt.org/directory";
 
@@ -241,7 +244,7 @@ class AcmeClient {
   String newOrderUrl;
   String keyChangeUrl;
   String newAccountUrl;
-  HttpClient client = HttpClient();
+  HttpClient client;
 
   void close() {
     client.close();
@@ -252,34 +255,43 @@ class AcmeClient {
       required this.newNonceUrl,
       required this.newAccountUrl,
       required this.keyChangeUrl,
-      required this.newOrderUrl});
+      required this.newOrderUrl,
+      required this.client});
 
   static Future<AcmeClient> createLetsEncryptStaging() =>
       create(letsEncryptStagingDirectoryUrl);
   static Future<AcmeClient> createLetsEncrypt() =>
       create(letsEncryptDirectoryUrl);
 
+  /// Creates an AcmeClient from the supplied [directoryUrl].  Typical values for [directoryUrl] are [letsEncryptDirectoryUrl] and [letsEncryptStagingDirectoryUrl]
   static Future<AcmeClient> create(String directoryUrl) async {
     var client = HttpClient();
-    final request = await client.getUrl(Uri.parse(directoryUrl));
-    final response = await request.close();
-    var body = await _readBodyAsString(response);
-    client.close();
-    final directory = json.decode(body);
-    final newNonceUrl = directory['newNonce'];
-    final newOrderUrl = directory['newOrder'];
-    final keyChangeUrl = directory['keyChange'];
-    final newAccountUrl = directory['newAccount'];
+    try {
+      final request = await client.getUrl(Uri.parse(directoryUrl));
+      final response = await request.close();
+      var body = await _readBodyAsString(response);
 
-    return AcmeClient(
-        directoryUrl: directoryUrl,
-        newNonceUrl: newNonceUrl,
-        newAccountUrl: newAccountUrl,
-        keyChangeUrl: keyChangeUrl,
-        newOrderUrl: newOrderUrl);
+      final directory = json.decode(body);
+      final newNonceUrl = directory['newNonce'];
+      final newOrderUrl = directory['newOrder'];
+      final keyChangeUrl = directory['keyChange'];
+      final newAccountUrl = directory['newAccount'];
+
+      return AcmeClient(
+          directoryUrl: directoryUrl,
+          newNonceUrl: newNonceUrl,
+          newAccountUrl: newAccountUrl,
+          keyChangeUrl: keyChangeUrl,
+          newOrderUrl: newOrderUrl,
+          client: client);
+    } catch (e) {
+      client.close();
+      rethrow;
+    }
+
   }
 
-  /// Creates a new account
+  /// Request a newAccount from the ACME server.
   Future<AcmeAccount> newAccount(
       {required String email, required bool termsOfServiceAgreed}) async {
     final payload = {
@@ -297,7 +309,7 @@ class AcmeClient {
     return account;
   }
 
-  /// Creates a new order
+  /// Request a newOrder from the ACME server.
   Future<AcmeOrder> newOrder(AcmeAccount account, List<String> hosts) async {
     final payload = {
       "identifiers":
@@ -308,8 +320,8 @@ class AcmeClient {
     return AcmeOrder.fromJson(json.decode(body));
   }
 
-  /// Begins a new authroization.
-  /// The [authotorizationUrl] is from [AcmeOrder.authorizations] see newOrder
+  /// Request a new authroization from the ACME server.
+  /// The [authotorizationUrl] is from [AcmeOrder.authorizations] see [newOrder]
   Future<AcmeAuthorization> authorization(
       AcmeAccount account, String authorizationUrl) async {
     final response = await _signedRequest(authorizationUrl, null, account);
@@ -317,7 +329,7 @@ class AcmeClient {
     return AcmeAuthorization.fromJson(jsonDecode(body));
   }
 
-  /// Gets a certificate
+  /// Request a certificate from the ACME server.  This can be done after calling [finalize] on an order.  This will always fail in a staging environment.
   Future<String> certificate(AcmeAccount account, AcmeOrder order) async {
     if (order.certificate == null) {
       throw Exception(
@@ -328,7 +340,7 @@ class AcmeClient {
     return body;
   }
 
-  /// Complete a challenge.  Aquire a challenge object with a prior call to [authorization]
+  /// Notify the ACME server that the challenge has been completed and is ready to be checked.  (e.g. the appropriate DNS record is set).
   Future<AcmeChallenge> challengeComplete(
       AcmeAccount account, AcmeChallenge challenge) async {
     final response =
@@ -337,7 +349,8 @@ class AcmeClient {
     return AcmeChallenge.fromJson(jsonDecode(body));
   }
 
-  /// Checks the satus of a challenge.  Aquire a challenge object with a prior call to [authorization]
+  /// Poll the ACME server on the status of a challenge.  Challenges typically take upto a about one minute to become valid after
+  /// calling [challengeComplete].  Clients typically poll the ACME server periodically utill the returned object has a status of [AcmeStatus.valid]
   Future<AcmeChallenge> challengeCheck(
       AcmeAccount account, AcmeChallenge challenge) async {
     final response = await _signedRequest(challenge.url, null, account);
@@ -345,8 +358,8 @@ class AcmeClient {
     return AcmeChallenge.fromJson(jsonDecode(body));
   }
 
-  /// Finalizes an order.  CsrPem is the certificateSigningRequest in PEM format.  The static method
-  /// [AcmeUtils.generateCsr] can be used to generate a new propertly formatted csr.
+  /// HTTP request to finalizes an order.  CsrPem is the Certificate Signing Request in PEM format.  The static method
+  /// [generateCsr] can be used to generate a new propertly formatted csr.
   Future<AcmeOrder> finalize(
       AcmeAccount account, AcmeOrder order, String csrPem) async {
     final csr = pemToDer(csrPem);
@@ -440,26 +453,6 @@ class AcmeClient {
   }
 
   String _sign(RSAPrivateKey privateKey, String data) {
-    /*
-    privateKey = privateKey as RSAPrivateKey;
-    var signer = Signer('SHA-256/RSA');
-    var privateKeyParams = PrivateKeyParameter<RSAPrivateKey>(privateKey);
-
-    // Initialize FortunaRandom
-    var secureRandom = FortunaRandom();
-    var seedSource = Random.secure();
-    var seeds = List<int>.generate(32, (_) => seedSource.nextInt(256));
-    secureRandom.seed(KeyParameter(Uint8List.fromList(seeds)));
-
-    var params = ParametersWithRandom(privateKeyParams, secureRandom);
-
-    signer.init(true, params);
-
-    Uint8List dataToSign = Uint8List.fromList(utf8.encode(data));
-    RSASignature signature = signer.generateSignature(dataToSign) as RSASignature;
-
-    return _base64Bytes(signature.bytes);
-    */
     return _base64Bytes(CryptoUtils.rsaSign(privateKey, utf8.encode(data)));
   }
 
@@ -646,8 +639,7 @@ AcmeStatus _acmeStatusFromString(String status) {
   }
 }
 
-/// Acme data transfer object plus private keys.
-/// This can be stored and restored for re-use ofthe account with the [toJson] method and [fromJson] constructor respectively.
+/// An Acme account.  Accounts can be saved for re-use later using [toJson] method and [fromJson] constructor respectively.
 class AcmeAccount {
   final AcmeJwk key;
   final List<String> contact;
@@ -733,11 +725,14 @@ class AcmeJwk {
   }
 }
 
+/// Data object that stores the name and value of a DNS TXT record.  Used for DNS-01 challenges
 class AcmeDnsRecord {
   AcmeDnsRecord(this.name, this.value);
 
-  /// The name for the txt record with the domain.  e.g. _acme-challenge.my-subdomain.example.com
+  /// The name for the txt record.  e.g. _acme-challenge.my-subdomain.example.com
   final String name;
+
+  /// The value (sometimes called data) for the TXT record
   final String value;
 }
 
