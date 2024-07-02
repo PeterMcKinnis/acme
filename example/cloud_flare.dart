@@ -1,6 +1,22 @@
 import "dart:convert";
 import "dart:io";
 
+Future<dynamic> createDnsTxtRecord(String name, String value) {
+  return cloudFlareClient.dnsRecordCreate("TXT", name, value);
+}
+
+Future<void> removeDnsTxtRecord(dynamic record) {
+  return cloudFlareClient.dnsRecordDelete(record.id);
+}
+
+CloudFlareClient get cloudFlareClient {
+  // Load apiKey and Zone id from a secure location
+  var parts = File("keys/cloue_flare_keys.txt").readAsStringSync().split(".");
+  var apiKey = parts[0];
+  var zoneId = parts[1];
+  return CloudFlareClient(domain: "shine.icu", zoneId: zoneId, apiKey: apiKey);
+}
+
 class CloudFlareClient {
   CloudFlareClient(
       {required this.domain, required this.zoneId, required this.apiKey});

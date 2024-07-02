@@ -14,12 +14,12 @@ void main() async {
 
   // Create the certificate using DNS-01 challenge
   var certs = await acmeDns01Challenge(
-      hosts: hosts,
-      createDnsTxtRecord: createDnsTxtRecord,
-      removeDnsRecord: removeDnsRecord,
-      email: "my_email@proton.me",
-      termsOfServiceAgreed: true,
-      directoryUrl: letsEncryptStagingDirectoryUrl);
+    hosts: hosts,
+    email: "my_email@proton.me",
+    termsOfServiceAgreed: true,
+    createDnsTxtRecord: createDnsTxtRecord,
+    removeDnsTxtRecord: removeDnsTxtRecord,
+  );
 
   // Save certificates to a file
   var dir = Directory.systemTemp.path;
@@ -58,33 +58,9 @@ void main() async {
   var newCerts = await acmeDns01Challenge(
       hosts: hosts,
       createDnsTxtRecord: createDnsTxtRecord,
-      removeDnsRecord: removeDnsRecord,
+      removeDnsTxtRecord: removeDnsTxtRecord,
       account: account);
 
   /// Save [newCerts] and restarts server
   /// no need to re-save the account as this will not change
-}
-
-Future<dynamic> createDnsTxtRecord(String name, String value) {
-  // You will need to implement a function that adds a
-  // TXT record on your dns server with the given name and value
-  // this will be different depending on your dns provider.  It could be
-  // as simple a printing the value to stdout and waiting for a user to
-  // manually add the record, or more likely an API call to your DNS provider
-  // as shown below.  Note that the value returned by this function
-  // will be passed to removeDnsRecord when the record is no longer needed
-  return cloudFlareClient.dnsRecordCreate("TXT", name, value);
-}
-
-Future<void> removeDnsRecord(dynamic record) {
-  // You will need to implement a function that removes the
-  // TXT record on your dns server
-  return cloudFlareClient.dnsRecordDelete(record.id);
-}
-
-CloudFlareClient get cloudFlareClient {
-  var parts = File("keys/cloue_flare_keys.txt").readAsStringSync().split(".");
-  var apiKey = parts[0];
-  var zoneId = parts[1];
-  return CloudFlareClient(domain: "shine.icu", zoneId: zoneId, apiKey: apiKey);
 }

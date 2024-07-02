@@ -8,7 +8,15 @@ import 'dart:convert'
         jsonDecode,
         jsonEncode,
         utf8;
-import 'dart:io' show HttpClient, HttpClientResponse;
+import 'dart:io'
+    show
+        ContentType,
+        HttpClient,
+        HttpClientResponse,
+        HttpRequest,
+        HttpServer,
+        HttpStatus,
+        InternetAddress;
 import 'dart:typed_data' show Uint8List;
 import 'package:basic_utils/basic_utils.dart'
     show
@@ -62,13 +70,13 @@ String generateCsr({
 /// [hosts] one or more hosts that the certificate will cover.  Note that the first
 /// subdomain for any host may be an \* to generate a wildcard certificate.  e.g. ["mysite.org", "deeply.nested.subdomain.at.mysite.org", "*.api.mysite.org", "mysite.com"]
 ///
-/// [createDnsTxtRecord] and [removeDnsRecord] are functions that you supply to
+/// [createDnsTxtRecord] and [removeDnsTxtRecord] are functions that you supply to
 /// crate and remove TXT records from your DNS server.   It could be
 /// as simple a printing the value to stdout and waiting for a user to
 // manually add the record, or more likely an API call to your DNS provider
 /// see [example/main.dart] and [example/cloud_flare.dart] for and example.
 /// Note that the value returned by [createDnsTxtRecord]
-/// will be passed to [removeDnsRecord] and is likely to be a record identifier. However
+/// will be passed to [removeDnsTxtRecord] and is likely to be a record identifier. However
 /// the value may be null or any other object as needed.
 ///
 /// You must supply either an [account] or alternatively [email] and [termsOfServiceAgreed] accepted.
@@ -89,7 +97,7 @@ Future<AcmeChallengeResult> acmeDns01Challenge(
     {required List<String> hosts,
     required Future<dynamic> Function(String name, String value)
         createDnsTxtRecord,
-    required Future<void> Function(dynamic) removeDnsRecord,
+    required Future<void> Function(dynamic) removeDnsTxtRecord,
     String? email,
     bool termsOfServiceAgreed = false,
     AcmeAccount? account,
@@ -122,9 +130,117 @@ Future<AcmeChallengeResult> acmeDns01Challenge(
           account: account!,
           authorizationUrl: authorizationUrl,
           log: log,
-          removeDnsRecord: removeDnsRecord,
+          removeDnsTxtRecord: removeDnsTxtRecord,
           createDnsTxtRecord: createDnsTxtRecord,
           maxDnsLookupRetrys: maxDnsLookupRetrys,
+          maxAcmeCheckRetrys: maxAcmeCheckRetrys));
+    }
+    await Future.wait(actions);
+
+    log("completed all challenges");
+
+    log("finalizing");
+    var keys = generateRSAKeyPair();
+    var csr = generateCsr(hosts: hosts, keys: keys);
+    var validOrder = await client.finalize(account!, order, csr);
+
+    log("getting certificate");
+    var publicPem = await client.certificate(account!, validOrder);
+    var privatePem = CryptoUtils.encodeRSAPrivateKeyToPem(keys.privateKey);
+    log("success");
+    return AcmeChallengeResult(
+        account: account!, privatePem: privatePem, publicPem: publicPem);
+  });
+}
+
+Future<HttpServer> defaultServeChallengeFile(String uri, String content) async {
+  final server = await HttpServer.bind(InternetAddress.anyIPv4, 80);
+  var path = Uri.parse(uri).path;
+  server.listen((HttpRequest request) {
+    if (request.uri.path == path) {
+      request.response
+        ..statusCode = HttpStatus.ok
+        ..headers.contentType = ContentType.text
+        ..write(content);
+    } else {
+      request.response
+        ..statusCode = HttpStatus.notFound
+        ..write('Not Found');
+    }
+    request.response.close();
+  });
+
+  return server;
+}
+
+Future<void> defaultRemoveChallengeFile(dynamic server) =>
+    (server as HttpServer).close();
+
+/// Creates certificates using th HTTP-01 challenge.
+///
+/// [hosts] one or more hosts that the certificate will cover.  ["mysite.org", "deeply.nested.subdomain.at.mysite.org", "mysite.com"]
+/// Per the ACME spec, HTTP challenge cannot be used to generate wild card certificates.
+///
+/// [serveChallengeFile] and [removeChallengeFile] are functions that you supply to
+/// crate and remove a file on your server.  By Default these start and stop new server
+/// on the locat machine to serve the file. Note that the value returns from [serveChallengeFile] is passed
+/// to [removeChallengeFile] and can any of no object as needed.
+///
+/// You must supply either an [account] or alternatively [email] and [termsOfServiceAgreed] accepted.
+/// If you supply an  [email] and [termsOfServiceAgreed] a new account will be created.  You
+/// must read and agree to the [terms of service](https://www.acmecupsusa.com/pages/terms-of-service#:~:text=The%20service%20and%20all%20products,implied%20warranties%20or%20conditions%20of)
+///
+/// [directoryUrl] is the base url for the acme endpoint.  If you are using lets encrypt it will be the constant [letsEncryptDirectoryUrl]. You can use [letsEncryptStagingDirectoryUrl] for
+/// testing and development.
+///
+/// [maxHttpLookupRetrys] controls how many times to look for the challenge http file (after it is created) before failing with an exception.  The file is polled every 5 seconds
+/// so this will fail after approx 2 minutes.   Adjust longer or shorter as needed.
+///
+/// [maxAcmeCheckRetrys] controls how many times to poll the acme server after a successfully creating a challenge record before failing with an exception. The ACME server is polled every 5 seconds
+/// so this will fail after approx 2 minutes.   Adjust longer or shorter as needed.
+///
+/// [log] a to record human readable progress updates.   By default logs are printed to stdout.  Supply a function to discard or store as needed
+Future<AcmeChallengeResult> acmeHttp01Challenge(
+    {required List<String> hosts,
+    Future<dynamic> Function(String name, String value) serveChallengeFile =
+        defaultServeChallengeFile,
+    Future<void> Function(dynamic) removeChallengeFile =
+        defaultRemoveChallengeFile,
+    String? email,
+    bool termsOfServiceAgreed = false,
+    AcmeAccount? account,
+    int maxHttpLookupRetrys = 24,
+    int maxAcmeCheckRetrys = 24,
+    String directoryUrl = letsEncryptDirectoryUrl,
+    void Function(String) log = print}) {
+  return _withCleanup((defer) async {
+    if (account == null && (email == null || !termsOfServiceAgreed)) {
+      throw Exception(
+          "dns01Challenge - must provide either an account or both an email and a true value for termsOfServiceAgreed");
+    }
+
+    var client = await AcmeClient.create(directoryUrl);
+    defer(client.close);
+
+    if (account == null) {
+      log("creating new account");
+      account = await client.newAccount(
+          email: email!, termsOfServiceAgreed: termsOfServiceAgreed);
+    }
+
+    log("creating new order");
+    var order = await client.newOrder(account!, hosts);
+
+    var actions = <Future<void>>[];
+    for (var authorizationUrl in order.authorizations) {
+      actions.add(_doHttp01Challenge(
+          client: client,
+          account: account!,
+          authorizationUrl: authorizationUrl,
+          log: log,
+          maxHttpLookupRetrys: maxHttpLookupRetrys,
+          removeChallengeFile: removeChallengeFile,
+          serveChallengeFile: serveChallengeFile,
           maxAcmeCheckRetrys: maxAcmeCheckRetrys));
     }
     await Future.wait(actions);
@@ -150,7 +266,7 @@ Future<void> _doDnsChallenge(
     required AcmeAccount account,
     required String authorizationUrl,
     required void Function(String) log,
-    required Future<void> Function(dynamic)? removeDnsRecord,
+    required Future<void> Function(dynamic) removeDnsTxtRecord,
     required Future<dynamic> Function(String name, String value)
         createDnsTxtRecord,
     required int maxDnsLookupRetrys,
@@ -170,10 +286,7 @@ Future<void> _doDnsChallenge(
         await createDnsTxtRecord(challengeRecord.name, challengeRecord.value);
     defer(() async {
       log("$prefix - removing DNS record");
-      var fn = removeDnsRecord;
-      if (fn != null) {
-        await fn(recordInfo);
-      }
+      await removeDnsTxtRecord(recordInfo);
     });
 
     log("$prefix - polling public DNS TXT record");
@@ -211,13 +324,95 @@ Future<void> _doDnsChallenge(
           throw Exception(
               "$prefix - challenge status pending after $maxAcmeCheckRetrys tries, aborting");
         }
-        log("$prefix - dchallenge status pending on try $i of $maxAcmeCheckRetrys, trying again in 5 seconds");
+        log("$prefix - challenge status pending on try $i of $maxAcmeCheckRetrys, trying again in 5 seconds");
         await Future.delayed(Duration(seconds: 5));
       } else {
         break;
       }
     }
   });
+}
+
+Future<void> _doHttp01Challenge(
+    {required AcmeClient client,
+    required AcmeAccount account,
+    required String authorizationUrl,
+    required void Function(String) log,
+    required Future<void> Function(dynamic) removeChallengeFile,
+    required Future<dynamic> Function(String name, String value)
+        serveChallengeFile,
+    required int maxHttpLookupRetrys,
+    required int maxAcmeCheckRetrys}) async {
+  return _withCleanup((defer) async {
+    var authorization = await client.authorization(account, authorizationUrl);
+
+    var prefix = authorization.identifier.value;
+    log("$prefix - starting http-01 challenge");
+    var host = authorization.identifier.value;
+    var challenge =
+        authorization.challenges.singleWhere((e) => e.type == "http-01");
+    var challengeFile = await client.httpRecord(account, challenge, host);
+
+    log("$prefix - serving challenge file ${challengeFile.url}");
+    var object =
+        await serveChallengeFile(challengeFile.url, challengeFile.content);
+    defer(() async {
+      log("$prefix - removing challenge file");
+      await removeChallengeFile(object);
+    });
+
+    log("$prefix - polling challenge file");
+    var i = 0;
+    while (true) {
+      var ok = await _pollHttpChallenge(client.client, challengeFile);
+      if (ok) {
+        log("$prefix - challenge file found");
+        break;
+      }
+      i += 1;
+      if (i == maxHttpLookupRetrys) {
+        throw Exception(
+            "$prefix - did not find  challenge file in $maxHttpLookupRetrys tries, aborting");
+      }
+      log("$prefix - did not find  challenge file on try $i of $maxHttpLookupRetrys, trying again in 5 seconds");
+      await Future.delayed(Duration(seconds: 5));
+    }
+
+    log("$prefix - completing challenge");
+    await client.challengeComplete(account, challenge);
+
+    AcmeStatus status;
+    i = 0;
+    while (true) {
+      status = (await client.challengeCheck(account, challenge)).status;
+      if (status == AcmeStatus.valid) {
+        log("$prefix - completed challenge");
+        break;
+      } else if (status == AcmeStatus.pending) {
+        i += 1;
+        if (i == maxAcmeCheckRetrys) {
+          throw Exception(
+              "$prefix - challenge status pending after $maxAcmeCheckRetrys tries, aborting");
+        }
+        log("$prefix - challenge status pending on try $i of $maxAcmeCheckRetrys, trying again in 5 seconds");
+        await Future.delayed(Duration(seconds: 5));
+      } else {
+        break;
+      }
+    }
+  });
+}
+
+Future<bool> _pollHttpChallenge(
+    HttpClient client, AcmeChallengeFile expected) async {
+  try {
+    var req = await client.getUrl(Uri.parse(expected.url));
+    var res = await req.close().timeout(Duration(seconds: 2));
+    var acutalContent = await _readBodyAsString(res);
+    return (acutalContent == expected.content);
+  } catch (_) {
+    return false;
+  }
 }
 
 /// The public directory url for Let's Encrypt
@@ -376,21 +571,30 @@ class AcmeClient {
   /// Generates the DnsRecord needed to complete a DNS-01 challenge.
   /// This needs to get updloaded as a TXT record on your DNS provider to pass the DNS challenge
   Future<AcmeDnsRecord> dnsRecord(
-      AcmeAccount account, AcmeChallenge dns, String host) async {
-    var parts = host.split(".");
-    if (parts.first == "*") {
-      parts.removeAt(0);
+      AcmeAccount account, AcmeChallenge challenge, String host) async {
+    if (host.startsWith("*.")) {
+      host = host.substring(2);
     }
-
-    var host2 = parts.join(".");
-    var name = "_acme-challenge.$host2";
+    var name = "_acme-challenge.$host";
 
     final thumbprint = _thumbprint(account.key);
-    final token = dns.token;
+    final token = challenge.token;
     final rawChallengeResponse = "$token.$thumbprint";
     var content =
         _base64Bytes(sha256.convert(utf8.encode(rawChallengeResponse)).bytes);
     return AcmeDnsRecord(name, content);
+  }
+
+  /// Generates the Name and Path of the HTTP file that needs to be served to pass an
+  /// HTTP-01 challenge
+  Future<AcmeChallengeFile> httpRecord(
+      AcmeAccount account, AcmeChallenge challenge, String host) async {
+    final thumbprint = _thumbprint(account.key);
+    final token = challenge.token;
+    final challengeResponse = "$token.$thumbprint";
+
+    final url = "http://$host/.well-known/acme-challenge/$token";
+    return AcmeChallengeFile(url, challengeResponse);
   }
 
   Future<HttpClientResponse> _signedRequest(
@@ -509,8 +713,8 @@ class AcmeClient {
   }
 }
 
-Future<String> _readBodyAsString(HttpClientResponse request) {
-  return request.transform(utf8.decoder).join();
+Future<String> _readBodyAsString(HttpClientResponse response) {
+  return response.transform(utf8.decoder).join();
 }
 
 /// Acme data transfer object
@@ -737,6 +941,17 @@ class AcmeDnsRecord {
 
   /// The value (sometimes called data) for the TXT record
   final String value;
+}
+
+/// Data object that stores the name and value of a DNS TXT record.  Used for DNS-01 challenges
+class AcmeChallengeFile {
+  AcmeChallengeFile(this.url, this.content);
+
+  /// The full URL where the file should be served
+  final String url;
+
+  /// The content of the file that should be served at [url]
+  final String content;
 }
 
 /// Inspired by GOLang defer blocks
