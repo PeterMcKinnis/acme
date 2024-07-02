@@ -1,6 +1,6 @@
 name: acme
 description: A minimal fuss library to create TLS certificates using Let's Encrypt or any other ACME V02 certificate provider. 
-version: 0.0.1
+version: 0.0.2
 repository: https://github.com/PeterMcKinnis/acme
 
 environment:
@@ -13,3 +13,10 @@ dependencies:
 dev_dependencies:
   lints: ^3.0.0
   test: ^1.24.0
+
+platforms:
+  android:
+  ios:
+  windows:
+  linux:
+  macos:

@@ -2,13 +2,15 @@ import "dart:convert";
 import "dart:io";
 
 class CloudFlareClient {
-  CloudFlareClient({required this.domain, required this.zoneId, required this.apiKey});
+  CloudFlareClient(
+      {required this.domain, required this.zoneId, required this.apiKey});
 
   String domain;
   String zoneId;
   String apiKey;
 
-  Future<TxtRecord> dnsRecordCreate(String type, String name, String content, {int ttl = 60, bool proxied = false}) async {
+  Future<TxtRecord> dnsRecordCreate(String type, String name, String content,
+      {int ttl = 60, bool proxied = false}) async {
     final body = jsonEncode({
       "type": type,
       "name": name,
@@ -26,20 +28,22 @@ class CloudFlareClient {
   }
 
   Future<List<TxtRecord>> txtRecordList() async {
-    var json = await _fetch("GET","dns_records?type=TXT");
+    var json = await _fetch("GET", "dns_records?type=TXT");
     final result = (json["result"] as List<Object?>)
         .map((e) => TxtRecord.fromJson(e as Map<String, Object?>))
         .toList();
     return result;
   }
 
-  Future<Map<String, dynamic>> _fetch(String method, String path, {String? body}) async {
+  Future<Map<String, dynamic>> _fetch(String method, String path,
+      {String? body}) async {
     final headers = {
       "Authorization": "Bearer $apiKey",
       "Content-Type": "application/json"
     };
-    
-    var uri = Uri.parse("https://api.cloudflare.com/client/v4/zones/$zoneId/$path");
+
+    var uri =
+        Uri.parse("https://api.cloudflare.com/client/v4/zones/$zoneId/$path");
     var client = HttpClient();
     try {
       var request = await client.openUrl(method, uri);
@@ -62,7 +66,6 @@ class CloudFlareClient {
       client.close();
     }
   }
-
 }
 
 class TxtRecord {
@@ -103,7 +106,7 @@ class TxtRecord {
       createdOn: DateTime.parse(json['created_on']),
       id: json['id'],
       locked: json['locked'],
-      meta:  Meta.fromJson(json['meta']),
+      meta: Meta.fromJson(json['meta']),
       modifiedOn: DateTime.parse(json['modified_on']),
       proxiable: json['proxiable'],
       tags: json['tags'] != null ? List<String>.from(json['tags']) : null,
