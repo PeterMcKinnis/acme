@@ -4,9 +4,7 @@ A minimal fuss library to create TLS certificates using Let's Encrypt or any oth
 
 ## Create Certificate With HTTP-01 Challenge
 
-Create a certificate using the HTTP-01 challenge.  By default this will launch a new HttpServer on the local machine 
-serve the challenge files.  In this case, the code must be run from a machine that is publically accessible at all of the given host(s).  
-You can supply your own `serveChallengeFile` and `removeChallengeFile` functions arrange another means of serving the file if needed.
+Create a certificate using the HTTP-01 challenge.  By default this will launch a new HttpServer on the local machine serve the challenge files.  In this case, the code must be run from a machine that is publically accessible at all of the given host(s). You can optionally supply your own `serveChallengeFile` and `removeChallengeFile` functions to arrange another means of serving the file if needed.
 
 ``` dart
 var certs = await acmeHttp01Challenge(
@@ -15,6 +13,7 @@ var certs = await acmeHttp01Challenge(
     termsOfServiceAgreed: true,
 );
 
+// Use the certs
 certs.publicPem;
 certs.privatePem;
 ```
@@ -22,11 +21,8 @@ certs.privatePem;
 
 ## Create Certificate With DNS-01 Challenge
 
-Create a certificate using the HTTP-01 challenge.  You will need to supply the functions [createDnsTxtRecord] and [removeDnsTxtRecord]
-to arrage adding and removing DNS records.  This could be as simple as printing the value to stdout and waiting for a user to
-manually add the record, or more likely API call to your DNS provider.  The value you return from [createDnsTxtRecord] will be
-be passed to [removeDnsTxtRecord] for your convieniance.  This value is not used by this library.  It could be recordId identifier,
-an AuthenticatedDnsClient or any other object that aids in cleanup.  It may be ignored completly if not needed for your implementation.
+You will need to supply the functions [createDnsTxtRecord] and [removeDnsTxtRecord]
+to arrage adding and removing DNS records.  This could be as simple as printing the value to stdout and waiting for a user to manually add the record, or more likely, an API call to your DNS provider.  The value you return from [createDnsTxtRecord] will be be passed to [removeDnsTxtRecord] for your convieniance.  This value is not used by this library.  It could be record identifier, an authenticated dns client or any other object that aids in cleanup.
 
 ``` dart
 var certs = await acmeDns01Challenge(
@@ -35,10 +31,10 @@ var certs = await acmeDns01Challenge(
     termsOfServiceAgreed: true,
     createDnsTxtRecord: (name, value) {
         // Create a TXT record on your DNS server
-        // Optionally return a recordId of any type for later removal
+        // The value retured will be passed to [removeDnsTxtRecord]
     }, 
     removeDnsTxtRecord: (recordId) {
-        // Remove the TXT record using the returned recordId
+        // Remove the TXT record
     },
 );
 
@@ -46,7 +42,7 @@ certs.publicPem;
 certs.privatePem;
 ```
 
-See `example/cloud_flare.dart` and `exampple/main.dart` for a reference implementation of `createDnsTxtRecord` and `removeDnsTxtRecord`.
+See `example/cloud_flare.dart` for a reference implementation of `createDnsTxtRecord` and `removeDnsTxtRecord`.
 
 ## Using the certificates
 
@@ -65,11 +61,33 @@ See below for an example of how to start a dart server using the certfiicates.
     ..usePrivateKeyBytes(utf8.encode(certs.privatePem))
   );
 
+  /// Serve a sample document
+  server.listen((HttpRequest request) {
+    var parts = request.uri.pathSegments;
+    if (parts.isEmpty || parts.singleOrNull == "index.html") {
+      request.response
+        ..statusCode = HttpStatus.ok
+        ..headers.contentType = ContentType.html
+        ..write("""
+<!DOCTYPE html>
+<html lang="en">
+<body>
+    <h1>Hello From HTTPS!</h1>
+</body>
+</html>
+""");
+    } else {
+      request.response
+        ..statusCode = HttpStatus.notFound
+        ..write('Not Found');
+    }
+    request.response.close();
+  });
 ```
 
 ## Multiple Hosts And Wild Card Domains
 
-You can create a certificate for multiple hosts, including wildcard domains.  See acme acme for details
+You can create a certificate to secure multiple sites, including wildcard domains.  See official ACME documentation for details.
 
 ``` Dart
 await acmeDns01Challenge(

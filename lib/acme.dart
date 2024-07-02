@@ -125,7 +125,7 @@ Future<AcmeChallengeResult> acmeDns01Challenge(
 
     var actions = <Future<void>>[];
     for (var authorizationUrl in order.authorizations) {
-      actions.add(_doDnsChallenge(
+      actions.add(_dnsAuthorize(
           client: client,
           account: account!,
           authorizationUrl: authorizationUrl,
@@ -231,9 +231,8 @@ Future<AcmeChallengeResult> acmeHttp01Challenge(
     log("creating new order");
     var order = await client.newOrder(account!, hosts);
 
-    var actions = <Future<void>>[];
     for (var authorizationUrl in order.authorizations) {
-      actions.add(_doHttp01Challenge(
+      await _httpAuthorize(
           client: client,
           account: account!,
           authorizationUrl: authorizationUrl,
@@ -241,9 +240,8 @@ Future<AcmeChallengeResult> acmeHttp01Challenge(
           maxHttpLookupRetrys: maxHttpLookupRetrys,
           removeChallengeFile: removeChallengeFile,
           serveChallengeFile: serveChallengeFile,
-          maxAcmeCheckRetrys: maxAcmeCheckRetrys));
+          maxAcmeCheckRetrys: maxAcmeCheckRetrys);
     }
-    await Future.wait(actions);
 
     log("completed all challenges");
 
@@ -261,7 +259,7 @@ Future<AcmeChallengeResult> acmeHttp01Challenge(
   });
 }
 
-Future<void> _doDnsChallenge(
+Future<void> _dnsAuthorize(
     {required AcmeClient client,
     required AcmeAccount account,
     required String authorizationUrl,
@@ -333,7 +331,7 @@ Future<void> _doDnsChallenge(
   });
 }
 
-Future<void> _doHttp01Challenge(
+Future<void> _httpAuthorize(
     {required AcmeClient client,
     required AcmeAccount account,
     required String authorizationUrl,
