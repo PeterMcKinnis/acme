@@ -57,7 +57,7 @@ String generateCsr({
   return csr;
 }
 
-/// Creates certificates using th DNS-01 challenge.  
+/// Creates certificates using th DNS-01 challenge.
 ///
 /// [hosts] one or more hosts that the certificate will cover.  Note that the first
 /// subdomain for any host may be an \* to generate a wildcard certificate.  e.g. ["mysite.org", "deeply.nested.subdomain.at.mysite.org", "*.api.mysite.org", "mysite.com"]
