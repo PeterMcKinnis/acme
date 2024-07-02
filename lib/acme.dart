@@ -370,9 +370,9 @@ Future<void> _httpAuthorize(
       i += 1;
       if (i == maxHttpLookupRetrys) {
         throw Exception(
-            "$prefix - did not find  challenge file in $maxHttpLookupRetrys tries, aborting");
+            "$prefix - did not find challenge file after $maxHttpLookupRetrys tries, aborting.  Check that your machines is accessable at $prefix.  A minimum you need an A or AAAA DNS record pointing to the local machine.  If you are behind a router ensure NAT is setup properly.  Also review firewal, proxy, and VPN settings to ensure TCP traffic on port 80 makes it to your machine");
       }
-      log("$prefix - did not find  challenge file on try $i of $maxHttpLookupRetrys, trying again in 5 seconds");
+      log("$prefix - did not find challenge file on try $i of $maxHttpLookupRetrys, trying again in 5 seconds");
       await Future.delayed(Duration(seconds: 5));
     }
 

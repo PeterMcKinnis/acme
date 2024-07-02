@@ -11,10 +11,11 @@ Future<void> removeDnsTxtRecord(dynamic record) {
 
 CloudFlareClient get cloudFlareClient {
   // Load apiKey and Zone id from a secure location
-  var parts = File("keys/cloue_flare_keys.txt").readAsStringSync().split(".");
-  var apiKey = parts[0];
-  var zoneId = parts[1];
-  return CloudFlareClient(domain: "shine.icu", zoneId: zoneId, apiKey: apiKey);
+  var parts = File("keys/cloue_flare_keys.txt").readAsStringSync().split(";");
+  var domain = parts[0];
+  var apiKey = parts[1];
+  var zoneId = parts[2];
+  return CloudFlareClient(domain: domain, zoneId: zoneId, apiKey: apiKey);
 }
 
 class CloudFlareClient {

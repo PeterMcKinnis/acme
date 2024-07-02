@@ -6,12 +6,12 @@ import 'package:acme/acme.dart';
 void main() async {
   // Create a certificate for one or more hosts
   var hosts = [
-    "temp3.shine.icu",
+    "mysite.com",
   ];
 
   // Create the certificate using DNS-01 challenge
   var certs = await acmeHttp01Challenge(
-      hosts: hosts, email: "my_email@proton.me", termsOfServiceAgreed: true);
+      hosts: hosts, email: "my_email@mysite.com", termsOfServiceAgreed: true);
 
   // Start the secure server
   // Start Authenticated Server
