@@ -224,7 +224,7 @@ Future<void> _doDnsChallenge(
 const letsEncryptDirectoryUrl =
     "https://acme-v02.api.letsencrypt.org/directory";
 
-  /// The public directory url for Let's Encrypt staging.  Used for testing  
+/// The public directory url for Let's Encrypt staging.  Used for testing
 const letsEncryptStagingDirectoryUrl =
     "https://acme-staging-v02.api.letsencrypt.org/directory";
 
@@ -288,7 +288,6 @@ class AcmeClient {
       client.close();
       rethrow;
     }
-
   }
 
   /// Request a newAccount from the ACME server.
